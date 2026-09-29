@@ -8,19 +8,19 @@ A native Windows train tracker written in C for following **MBTA Commuter Rail**
 
 Browse trains by source, line, destination, current stop, status, and estimated speed.
 
-![Main train list in the Windows application](screenshots/train-list.png)
+![Main train list in the Windows application](/train-list.png)
 
 ### Map view
 
 See reported train positions and MBTA route lines; click a marker to inspect a train.
 
-![Map with route lines, train markers, and a selected train](screenshots/map-view.png)
+![Map with route lines, train markers, and a selected train](/map-view.png)
 
 ### Train details and upcoming stops
 
 Select a train to see its position, last update, upcoming stops, predictions, and available delay information.
 
-![Selected Lowell Line train with details and upcoming stops](screenshots/train-details.png)
+![Selected Lowell Line train with details and upcoming stops](/train-details.png)
 
 ## Features
 
