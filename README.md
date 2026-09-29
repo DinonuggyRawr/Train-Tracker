@@ -1,3 +1,4 @@
+<img width="2198" height="1508" alt="Screenshot 2026-09-28 210107" src="https://github.com/user-attachments/assets/a454c1fe-cbec-4581-97ca-3145a684d61b" />
 # 🚆 Northeast Train Tracker
 
 A Windows-based **live train tracking application written in C** for tracking MBTA Commuter Rail and Amtrak trains throughout New England.
@@ -352,11 +353,14 @@ Possible future improvements include:
 Screenshots of the application can be added here.
 
 ```text
-[ GUI Screenshot ]
+<img width="2198" height="1508" alt="Screenshot 2026-09-28 210107" src="https://github.com/user-attachments/assets/5609f197-899c-4982-b967-47c200124325" />
 
-[ Map View Screenshot ]
 
-[ Train Details Screenshot ]
+<img width="2192" height="1498" alt="Screenshot 2026-09-28 210142" src="https://github.com/user-attachments/assets/e1163243-d345-4793-ab14-fb81b508960e" />
+
+
+<img width="2200" height="1498" alt="Screenshot 2026-09-28 210225" src="https://github.com/user-attachments/assets/25cd1a6e-b607-406c-ba7a-c5e4d7c878e4" />
+
 ```
 
 ---
