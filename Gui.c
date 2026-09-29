@@ -1039,18 +1039,39 @@ static void get_map_rect(int width, int height, RECT* map)
 	map->bottom = height - 54;
 }
 
-static POINT project_map_point(const RECT* map, double latitude, double longitude)
+static POINT project_map_point(const RECT* map, double center_x, double center_y, double latitude, double longitude)
 {
 	POINT point;
-	double center_x;
-	double center_y;
 	double point_x;
 	double point_y;
-	map_geo_to_world(map_center_latitude, map_center_longitude, map_zoom, &center_x, &center_y);
 	map_geo_to_world(latitude, longitude, map_zoom, &point_x, &point_y);
 	point.x = map->left + (map->right - map->left) / 2 + (int)(point_x - center_x);
 	point.y = map->top + (map->bottom - map->top) / 2 + (int)(point_y - center_y);
 	return point;
+}
+
+/* Original stylized locomotive marker (rounded body + cab window), drawn rather than sourced from any third-party icon set. */
+static void draw_train_marker(HDC device_context, int x, int y, COLORREF color, int selected)
+{
+	int half_width = selected ? 10 : 7;
+	int half_height = selected ? 6 : 4;
+	HBRUSH outline_brush = CreateSolidBrush(COLOR_WHITE);
+	HBRUSH body_brush = CreateSolidBrush(color);
+	HBRUSH cab_brush = CreateSolidBrush(RGB(235, 240, 245));
+	HPEN outline_pen = CreatePen(PS_SOLID, selected ? 2 : 1, RGB(45, 52, 62));
+	HPEN previous_pen = (HPEN)SelectObject(device_context, outline_pen);
+	HBRUSH previous_brush = (HBRUSH)SelectObject(device_context, outline_brush);
+	RoundRect(device_context, x - half_width - 1, y - half_height - 1, x + half_width + 1, y + half_height + 1, 6, 6);
+	SelectObject(device_context, body_brush);
+	RoundRect(device_context, x - half_width, y - half_height, x + half_width, y + half_height, 5, 5);
+	SelectObject(device_context, cab_brush);
+	Ellipse(device_context, x + half_width - 5, y - 2, x + half_width - 1, y + 2);
+	SelectObject(device_context, previous_brush);
+	SelectObject(device_context, previous_pen);
+	DeleteObject(outline_brush);
+	DeleteObject(body_brush);
+	DeleteObject(cab_brush);
+	DeleteObject(outline_pen);
 }
 
 static COLORREF map_route_color(const char* route_id)
@@ -1166,26 +1187,34 @@ static void draw_map_view(HDC device_context, int width, int height)
 		static const char offline_message[] = "Map tiles load when online; train markers remain available offline.";
 		TextOutA(device_context, map.left + 18, map.top + 18, offline_message, (int)strlen(offline_message));
 	}
-	for (index = 0; index < map_route_line_count; ++index) {
-		MapRouteLine* route_line = &map_route_lines[index];
+	{
+		static POINT projected_points[MAX_MAP_ROUTE_POINTS];
 		HPEN casing_pen = CreatePen(PS_SOLID, 8, COLOR_WHITE);
-		HPEN route_pen = CreatePen(PS_SOLID, 4, map_route_color(route_line->route_id));
 		HPEN previous_route_pen = (HPEN)SelectObject(device_context, casing_pen);
-		int point_index;
-		for (point_index = 0; point_index < route_line->point_count; ++point_index) {
-			POINT point = project_map_point(&map, route_line->latitude[point_index], route_line->longitude[point_index]);
-			if (point_index == 0) MoveToEx(device_context, point.x, point.y, NULL);
-			else LineTo(device_context, point.x, point.y);
-		}
-		SelectObject(device_context, route_pen);
-		for (point_index = 0; point_index < route_line->point_count; ++point_index) {
-			POINT point = project_map_point(&map, route_line->latitude[point_index], route_line->longitude[point_index]);
-			if (point_index == 0) MoveToEx(device_context, point.x, point.y, NULL);
-			else LineTo(device_context, point.x, point.y);
+		for (index = 0; index < map_route_line_count; ++index) {
+			MapRouteLine* route_line = &map_route_lines[index];
+			int point_index;
+			for (point_index = 0; point_index < route_line->point_count; ++point_index) {
+				projected_points[point_index] = project_map_point(&map, world_center_x, world_center_y,
+					route_line->latitude[point_index], route_line->longitude[point_index]);
+			}
+			/* Batch into a single call instead of per-point MoveToEx/LineTo, which is far cheaper for long shapes. */
+			if (route_line->point_count > 1) Polyline(device_context, projected_points, route_line->point_count);
 		}
 		SelectObject(device_context, previous_route_pen);
 		DeleteObject(casing_pen);
-		DeleteObject(route_pen);
+		for (index = 0; index < map_route_line_count; ++index) {
+			MapRouteLine* route_line = &map_route_lines[index];
+			HPEN route_pen = CreatePen(PS_SOLID, 4, map_route_color(route_line->route_id));
+			int point_index;
+			SelectObject(device_context, route_pen);
+			for (point_index = 0; point_index < route_line->point_count; ++point_index) {
+				projected_points[point_index] = project_map_point(&map, world_center_x, world_center_y,
+					route_line->latitude[point_index], route_line->longitude[point_index]);
+			}
+			if (route_line->point_count > 1) Polyline(device_context, projected_points, route_line->point_count);
+			DeleteObject(route_pen);
+		}
 	}
 	{
 		int unique_indices[MAX_MAP_ROUTE_LINES];
@@ -1238,42 +1267,31 @@ static void draw_map_view(HDC device_context, int width, int height)
 	land_brush = CreateSolidBrush(RGB(115, 129, 145));
 	previous_brush = (HBRUSH)SelectObject(device_context, land_brush);
 	for (index = 0; index < sizeof(landmarks) / sizeof(landmarks[0]); ++index) {
-		POINT point = project_map_point(&map, landmarks[index].latitude, landmarks[index].longitude);
+		POINT point = project_map_point(&map, world_center_x, world_center_y, landmarks[index].latitude, landmarks[index].longitude);
 		Ellipse(device_context, point.x - 3, point.y - 3, point.x + 3, point.y + 3);
 		TextOutA(device_context, point.x + 6, point.y - 9, landmarks[index].name,
 			(int)strlen(landmarks[index].name));
 	}
 	SelectObject(device_context, previous_brush);
 	DeleteObject(land_brush);
-	for (index = 0; index < train_count; ++index) {
-		POINT point;
-		HBRUSH marker_brush;
-		HBRUSH white_marker;
-		HBRUSH previous_marker;
-		COLORREF marker_color;
-		int selected;
-		if (!trains[index].has_location || trains[index].latitude < 40.5 || trains[index].latitude > 44.8 ||
-			trains[index].longitude < -74.7 || trains[index].longitude > -69.3) continue;
-		point = project_map_point(&map, trains[index].latitude, trains[index].longitude);
-		selected = strcmp(selected_details_vehicle, trains[index].vehicle_id) == 0;
-		marker_color = trains[index].source == TRAIN_SOURCE_AMTRAK ? RGB(206, 112, 67) :
-			map_route_color(trains[index].route_id);
-		white_marker = CreateSolidBrush(COLOR_WHITE);
-		marker_brush = CreateSolidBrush(marker_color);
-		previous_marker = (HBRUSH)SelectObject(device_context, white_marker);
-		Ellipse(device_context, point.x - (selected ? 8 : 6), point.y - (selected ? 8 : 6),
-			point.x + (selected ? 8 : 6), point.y + (selected ? 8 : 6));
-		SelectObject(device_context, marker_brush);
-		Ellipse(device_context, point.x - (selected ? 5 : 3), point.y - (selected ? 5 : 3),
-			point.x + (selected ? 5 : 3), point.y + (selected ? 5 : 3));
-		SelectObject(device_context, previous_marker);
-		DeleteObject(white_marker);
-		DeleteObject(marker_brush);
-		if (selected) {
-			char label[112];
-			snprintf(label, sizeof(label), "%s  %s", trains[index].car_label, trains[index].destination);
-			SetTextColor(device_context, COLOR_BRAND_NAVY);
-			TextOutA(device_context, point.x + 10, point.y - 10, label, (int)strlen(label));
+	{
+		for (index = 0; index < train_count; ++index) {
+			POINT point;
+			COLORREF marker_color;
+			int selected;
+			if (!trains[index].has_location || trains[index].latitude < 40.5 || trains[index].latitude > 44.8 ||
+				trains[index].longitude < -74.7 || trains[index].longitude > -69.3) continue;
+			point = project_map_point(&map, world_center_x, world_center_y, trains[index].latitude, trains[index].longitude);
+			selected = strcmp(selected_details_vehicle, trains[index].vehicle_id) == 0;
+			marker_color = trains[index].source == TRAIN_SOURCE_AMTRAK ? RGB(206, 112, 67) :
+				map_route_color(trains[index].route_id);
+			draw_train_marker(device_context, point.x, point.y, marker_color, selected);
+			if (selected) {
+				char label[112];
+				snprintf(label, sizeof(label), "%s  %s", trains[index].car_label, trains[index].destination);
+				SetTextColor(device_context, COLOR_BRAND_NAVY);
+				TextOutA(device_context, point.x + 10, point.y - 10, label, (int)strlen(label));
+			}
 		}
 	}
 	if (map_selected_train_index >= 0) {
@@ -1396,10 +1414,13 @@ static void select_map_train(int click_x, int click_y, int width, int height)
 	int index;
 	int selected = -1;
 	long nearest_distance = 100;
+	double center_x;
+	double center_y;
 	map.left = 38;
 	map.top = 178;
 	map.right = width - 38;
 	map.bottom = height - 54;
+	map_geo_to_world(map_center_latitude, map_center_longitude, map_zoom, &center_x, &center_y);
 	for (index = 0; index < train_count; ++index) {
 		POINT point;
 		long delta_x;
@@ -1407,7 +1428,7 @@ static void select_map_train(int click_x, int click_y, int width, int height)
 		long distance;
 		if (!trains[index].has_location || trains[index].latitude < 40.5 || trains[index].latitude > 44.8 ||
 			trains[index].longitude < -74.7 || trains[index].longitude > -69.3) continue;
-		point = project_map_point(&map, trains[index].latitude, trains[index].longitude);
+		point = project_map_point(&map, center_x, center_y, trains[index].latitude, trains[index].longitude);
 		delta_x = point.x - click_x;
 		delta_y = point.y - click_y;
 		distance = delta_x * delta_x + delta_y * delta_y;
@@ -2420,6 +2441,7 @@ static void set_view_mode(int mode)
 		SetWindowTextA(details_edit, "Loading full train details and predictions...");
 	}
 	if (GetClientRect(main_window, &client)) layout_controls(client.right, client.bottom);
+	if (mode != VIEW_MAP) InvalidateRect(main_window, NULL, TRUE);
 }
 
 static DWORD WINAPI alerts_worker(void* parameter)
@@ -3091,11 +3113,19 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 		break;
 	case WM_MOUSEMOVE:
 		if (view_mode == VIEW_MAP && map_dragging && (wparam & MK_LBUTTON)) {
-			int delta_x = GET_X_LPARAM(lparam) - map_drag_start_x;
-			int delta_y = GET_Y_LPARAM(lparam) - map_drag_start_y;
-			double world_size = 256.0 * (double)(1 << map_zoom);
-			double center_x = map_drag_start_center_x - delta_x;
-			double center_y = map_drag_start_center_y - delta_y;
+			MSG queued_move;
+			int delta_x;
+			int delta_y;
+			double world_size;
+			double center_x;
+			double center_y;
+			/* Skip stale positions when moves are queued faster than we can repaint. */
+			if (PeekMessageA(&queued_move, window, WM_MOUSEMOVE, WM_MOUSEMOVE, PM_NOREMOVE)) return 0;
+			delta_x = GET_X_LPARAM(lparam) - map_drag_start_x;
+			delta_y = GET_Y_LPARAM(lparam) - map_drag_start_y;
+			world_size = 256.0 * (double)(1 << map_zoom);
+			center_x = map_drag_start_center_x - delta_x;
+			center_y = map_drag_start_center_y - delta_y;
 			if (abs(delta_x) > 2 || abs(delta_y) > 2) map_drag_moved = 1;
 			if (center_x < 0) center_x += world_size;
 			if (center_x >= world_size) center_x -= world_size;
