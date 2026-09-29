@@ -53,6 +53,7 @@
 #define WM_DETAILS_COMPLETE (WM_APP + 3)
 #define WM_TRAY_CALLBACK (WM_APP + 4)
 #define WM_MAP_DATA_COMPLETE (WM_APP + 5)
+#define WM_EASTER_EGG_COMPLETE (WM_APP + 6)
 #define EASTER_EGG_TIMER 2
 
 #define VIEW_TRAINS 0
@@ -70,6 +71,7 @@
 #define MAX_DELAY_SAMPLES 512
 #define MAX_MAP_TILES 64
 #define MAX_CACHED_MAP_TILES 48
+#define MAX_EASTER_HIDDEN_CONTROLS 128
 
 typedef struct RouteSummary {
 	char name[96];
@@ -186,6 +188,8 @@ typedef INT (WINAPI *GdipTranslateWorldTransformProc)(GpGraphics*, FLOAT, FLOAT,
 typedef INT (WINAPI *GdipRotateWorldTransformProc)(GpGraphics*, FLOAT, INT);
 
 static HWND main_window;
+static HWND easter_hidden_controls[MAX_EASTER_HIDDEN_CONTROLS];
+static int easter_hidden_control_count;
 static HWND filter_edit;
 static HWND refresh_button;
 static HWND train_list;
@@ -283,6 +287,7 @@ static HWND title_control;
 static HWND subtitle_control;
 static HFONT title_font;
 static HFONT subtitle_font;
+static HFONT easter_font;
 static HBRUSH workspace_brush;
 static HBRUSH white_brush;
 static HBRUSH header_brush;
@@ -290,6 +295,7 @@ static HBRUSH accent_brush;
 static HMODULE gdiplus_module;
 static ULONG_PTR gdiplus_token;
 static GpImage* logo_image;
+static GpImage* easter_logo_image;
 static GdipLoadImageFromFileProc gdip_load_image;
 static GdipCreateFromHDCProc gdip_create_from_hdc;
 static GdipDrawImageRectIProc gdip_draw_image_rect;
@@ -326,6 +332,203 @@ static DWORD WINAPI map_data_worker(void* parameter);
 static int CALLBACK compare_main_rows(LPARAM first_data, LPARAM second_data, LPARAM context);
 static int CALLBACK compare_stop_rows(LPARAM first_data, LPARAM second_data, LPARAM context);
 static void get_map_rect(int width, int height, RECT* map);
+
+static void draw_easter_train(HDC device_context, int client_width, double progress, int reverse)
+{
+	HBRUSH car_brush = CreateSolidBrush(RGB(245, 244, 232));
+	HBRUSH engine_brush = CreateSolidBrush(RGB(202, 54, 45));
+	HBRUSH window_brush = CreateSolidBrush(RGB(87, 174, 205));
+	HBRUSH wheel_brush = CreateSolidBrush(RGB(20, 28, 38));
+	HBRUSH gold_brush = CreateSolidBrush(RGB(231, 177, 68));
+	HPEN track_pen = CreatePen(PS_SOLID, 2, RGB(231, 177, 68));
+	int saved_dc = SaveDC(device_context);
+	HGDIOBJ previous_pen = SelectObject(device_context, track_pen);
+	HGDIOBJ previous_brush;
+	int x = -150 + (int)(progress * (client_width + 300));
+	int y = 31;
+	int tie_x;
+	RECT shape;
+	for (tie_x = 0; tie_x < client_width; tie_x += 28) {
+		shape.left = tie_x;
+		shape.top = 66;
+		shape.right = tie_x + 4;
+		shape.bottom = 71;
+		FillRect(device_context, &shape, gold_brush);
+	}
+	MoveToEx(device_context, 0, 65, NULL);
+	LineTo(device_context, client_width, 65);
+	MoveToEx(device_context, 0, 70, NULL);
+	LineTo(device_context, client_width, 70);
+	if (reverse && saved_dc != 0) {
+		XFORM mirror_transform;
+		SetGraphicsMode(device_context, GM_ADVANCED);
+		mirror_transform.eM11 = -1.0f;
+		mirror_transform.eM12 = 0.0f;
+		mirror_transform.eM21 = 0.0f;
+		mirror_transform.eM22 = 1.0f;
+		mirror_transform.eDx = (FLOAT)(2 * x + 148);
+		mirror_transform.eDy = 0.0f;
+		SetWorldTransform(device_context, &mirror_transform);
+	}
+	shape.left = x;
+	shape.top = y + 7;
+	shape.right = x + 41;
+	shape.bottom = y + 25;
+	FillRect(device_context, &shape, car_brush);
+	shape.left = x + 45;
+	shape.right = x + 86;
+	FillRect(device_context, &shape, car_brush);
+	shape.left = x + 7;
+	shape.top = y + 10;
+	shape.right = x + 17;
+	shape.bottom = y + 18;
+	FillRect(device_context, &shape, window_brush);
+	shape.left = x + 22;
+	shape.right = x + 32;
+	FillRect(device_context, &shape, window_brush);
+	shape.left = x + 52;
+	shape.right = x + 62;
+	FillRect(device_context, &shape, window_brush);
+	shape.left = x + 67;
+	shape.right = x + 77;
+	FillRect(device_context, &shape, window_brush);
+	shape.left = x + 4;
+	shape.top = y + 23;
+	shape.right = x + 42;
+	shape.bottom = y + 26;
+	FillRect(device_context, &shape, gold_brush);
+	shape.left = x + 49;
+	shape.right = x + 87;
+	FillRect(device_context, &shape, gold_brush);
+	shape.left = x + 90;
+	shape.top = y + 10;
+	shape.right = x + 140;
+	shape.bottom = y + 27;
+	FillRect(device_context, &shape, engine_brush);
+	shape.left = x + 108;
+	shape.top = y + 3;
+	shape.right = x + 132;
+	shape.bottom = y + 12;
+	FillRect(device_context, &shape, engine_brush);
+	shape.left = x + 114;
+	shape.top = y + 5;
+	shape.right = x + 124;
+	shape.bottom = y + 10;
+	FillRect(device_context, &shape, window_brush);
+	shape.left = x + 96;
+	shape.top = y + 2;
+	shape.right = x + 102;
+	shape.bottom = y + 10;
+	FillRect(device_context, &shape, gold_brush);
+	shape.left = x + 138;
+	shape.top = y + 17;
+	shape.right = x + 148;
+	shape.bottom = y + 24;
+	FillRect(device_context, &shape, gold_brush);
+	previous_brush = SelectObject(device_context, wheel_brush);
+	SelectObject(device_context, GetStockObject(NULL_PEN));
+	Ellipse(device_context, x + 7, y + 22, x + 19, y + 34);
+	Ellipse(device_context, x + 28, y + 22, x + 40, y + 34);
+	Ellipse(device_context, x + 52, y + 22, x + 64, y + 34);
+	Ellipse(device_context, x + 73, y + 22, x + 85, y + 34);
+	Ellipse(device_context, x + 96, y + 23, x + 110, y + 37);
+	Ellipse(device_context, x + 121, y + 23, x + 135, y + 37);
+	if (saved_dc != 0) RestoreDC(device_context, saved_dc);
+	else {
+		SelectObject(device_context, previous_brush);
+		SelectObject(device_context, previous_pen);
+	}
+	DeleteObject(track_pen);
+	DeleteObject(car_brush);
+	DeleteObject(engine_brush);
+	DeleteObject(window_brush);
+	DeleteObject(wheel_brush);
+	DeleteObject(gold_brush);
+}
+
+static void draw_easter_word(HDC device_context, int client_width, int client_height,
+	ULONGLONG elapsed, int copy_count)
+{
+	static const char word[] = "AUTISTIC";
+	static const COLORREF colors[] = {
+		RGB(255, 96, 105), RGB(255, 176, 72), RGB(255, 226, 92), RGB(113, 224, 142),
+		RGB(91, 205, 235), RGB(145, 145, 255), RGB(238, 126, 206), RGB(80, 230, 255)
+	};
+	int letter_widths[sizeof(word) - 1];
+	int word_width = 0;
+	int word_height = 0;
+	int saved_dc;
+	double angle;
+	double cosine;
+	double sine;
+	double scale;
+	double rotated_width;
+	double rotated_height;
+	double half_width;
+	double half_height;
+	double horizontal_bounce;
+	double vertical_bounce;
+	ULONGLONG copy_elapsed;
+	XFORM transform;
+	int index;
+	int text_x;
+	int copy_index;
+	if (easter_font == NULL || client_width <= 0 || client_height <= 0) return;
+	saved_dc = SaveDC(device_context);
+	if (saved_dc == 0) return;
+	if (SelectObject(device_context, easter_font) == NULL) {
+		RestoreDC(device_context, saved_dc);
+		return;
+	}
+	for (index = 0; index < (int)(sizeof(word) - 1); ++index) {
+		char letter[2] = { word[index], '\0' };
+		SIZE letter_size;
+		if (!GetTextExtentPoint32A(device_context, letter, 1, &letter_size)) {
+			RestoreDC(device_context, saved_dc);
+			return;
+		}
+		letter_widths[index] = letter_size.cx;
+		word_width += letter_size.cx;
+		if (letter_size.cy > word_height) word_height = letter_size.cy;
+	}
+	if (copy_count > 32) copy_count = 32;
+	if (copy_count < 1) copy_count = 1;
+	if (SetGraphicsMode(device_context, GM_ADVANCED) != 0) {
+		SetBkMode(device_context, TRANSPARENT);
+		for (copy_index = 0; copy_index < copy_count; ++copy_index) {
+			copy_elapsed = elapsed + (ULONGLONG)copy_index * 430;
+			angle = (double)copy_elapsed * 0.003 + copy_index * 0.41;
+			cosine = cos(angle);
+			sine = sin(angle);
+			scale = 1.05 + 0.5 * sin((double)copy_elapsed * 0.004);
+			rotated_width = fabs(cosine) * word_width + fabs(sine) * word_height;
+			rotated_height = fabs(sine) * word_width + fabs(cosine) * word_height;
+			if (rotated_width * scale > client_width - 8) scale = (client_width - 8) / rotated_width;
+			if (rotated_height * scale > client_height - 8) scale = (client_height - 8) / rotated_height;
+			if (scale < 0.1) scale = 0.1;
+			half_width = rotated_width * scale / 2.0;
+			half_height = rotated_height * scale / 2.0;
+			horizontal_bounce = fmod((double)copy_elapsed / 3000.0 + copy_index * 0.23, 2.0);
+			vertical_bounce = fmod((double)copy_elapsed / 2100.0 + 0.31 + copy_index * 0.37, 2.0);
+			if (horizontal_bounce > 1.0) horizontal_bounce = 2.0 - horizontal_bounce;
+			if (vertical_bounce > 1.0) vertical_bounce = 2.0 - vertical_bounce;
+			transform.eM11 = (FLOAT)(scale * cosine);
+			transform.eM12 = (FLOAT)(scale * sine);
+			transform.eM21 = (FLOAT)(-scale * sine);
+			transform.eM22 = (FLOAT)(scale * cosine);
+			transform.eDx = (FLOAT)(half_width + horizontal_bounce * (client_width - 2.0 * half_width));
+			transform.eDy = (FLOAT)(half_height + vertical_bounce * (client_height - 2.0 * half_height));
+			if (!SetWorldTransform(device_context, &transform)) continue;
+			text_x = -word_width / 2;
+			for (index = 0; index < (int)(sizeof(word) - 1); ++index) {
+				SetTextColor(device_context, colors[index]);
+				TextOutA(device_context, text_x, -word_height / 2, &word[index], 1);
+				text_x += letter_widths[index];
+			}
+		}
+	}
+	RestoreDC(device_context, saved_dc);
+}
 
 static void load_delay_history(void)
 {
@@ -560,7 +763,14 @@ static int initialize_logo(void)
 	separator[1] = L'\0';
 	if (wcscat_s(path, MAX_PATH, L"Train tracker Logo.png") != 0) return 0;
 	status = load_image(path, &logo_image);
-	return status == 0 && logo_image != NULL;
+	if (status != 0 || logo_image == NULL) return 0;
+	separator = wcsrchr(path, L'\\');
+	if (separator == NULL) return 1;
+	separator[1] = L'\0';
+	if (wcscat_s(path, MAX_PATH, L"Biggie Thomas YouTube Thumbnail.jpg") == 0) {
+		load_image(path, &easter_logo_image);
+	}
+	return 1;
 }
 
 static void draw_owner_button(const DRAWITEMSTRUCT* item)
@@ -2320,6 +2530,7 @@ static void toggle_watch(void)
 
 static DWORD WINAPI play_train_egg_horn(void* parameter)
 {
+	HWND window = (HWND)parameter;
 	const DWORD sample_rate = 22050;
 	const double duration = 1.35;
 	DWORD sample_count = (DWORD)(sample_rate * duration);
@@ -2328,8 +2539,10 @@ static DWORD WINAPI play_train_egg_horn(void* parameter)
 		sizeof(WaveFileHeader) + data_size);
 	short* samples;
 	DWORD index;
-	(void)parameter;
-	if (wave == NULL) return 0;
+	if (wave == NULL) {
+		PostMessageA(window, WM_EASTER_EGG_COMPLETE, 0, 0);
+		return 0;
+	}
 	memcpy(wave->riff, "RIFF", 4);
 	wave->file_size = 36 + data_size;
 	memcpy(wave->wave, "WAVE", 4);
@@ -2357,6 +2570,7 @@ static DWORD WINAPI play_train_egg_horn(void* parameter)
 	}
 	PlaySoundA((LPCSTR)wave, NULL, SND_MEMORY | SND_SYNC);
 	HeapFree(GetProcessHeap(), 0, wave);
+	PostMessageA(window, WM_EASTER_EGG_COMPLETE, 0, 0);
 	return 0;
 }
 
@@ -2383,12 +2597,31 @@ static int play_local_train_song_segment(void)
 		mciSendStringA(command, NULL, 0, NULL) != 0) return 0;
 	easter_mp3_open = 1;
 	if (mciSendStringA("set mbtaEggTrack time format milliseconds", NULL, 0, NULL) != 0 ||
-		mciSendStringA("play mbtaEggTrack from 16000 to 80000 notify", NULL, 0, main_window) != 0) {
+		mciSendStringA("play mbtaEggTrack from 16000 to 36000 notify", NULL, 0, main_window) != 0) {
 		mciSendStringA("close mbtaEggTrack", NULL, 0, NULL);
 		easter_mp3_open = 0;
 		return 0;
 	}
 	return 1;
+}
+
+static BOOL CALLBACK hide_easter_control(HWND control, LPARAM context)
+{
+	(void)context;
+	if (easter_hidden_control_count < MAX_EASTER_HIDDEN_CONTROLS && IsWindowVisible(control)) {
+		easter_hidden_controls[easter_hidden_control_count++] = control;
+		ShowWindow(control, SW_HIDE);
+	}
+	return TRUE;
+}
+
+static void restore_easter_controls(void)
+{
+	int index;
+	for (index = 0; index < easter_hidden_control_count; ++index) {
+		if (IsWindow(easter_hidden_controls[index])) ShowWindow(easter_hidden_controls[index], SW_SHOW);
+	}
+	easter_hidden_control_count = 0;
 }
 
 static void start_train_easter_egg(void)
@@ -2400,14 +2633,32 @@ static void start_train_easter_egg(void)
 	easter_start_tick = GetTickCount64();
 	easter_logo_angle = 0.0f;
 	easter_egg_active = 1;
+	easter_hidden_control_count = 0;
+	EnumChildWindows(main_window, hide_easter_control, 0);
 	SetTimer(main_window, EASTER_EGG_TIMER, 16, NULL);
+	InvalidateRect(main_window, NULL, TRUE);
 	if (play_local_train_song_segment()) {
-		SetWindowTextA(status_text, "I like trains. Playing the local 0:16-1:20 clip!");
+		SetWindowTextA(status_text, "I like trains. Playing the local 0:16-0:36 clip!");
 	} else {
 		SetWindowTextA(status_text, "MP3 unavailable; sounding the train horn instead.");
-		horn_thread = CreateThread(NULL, 0, play_train_egg_horn, NULL, 0, NULL);
+		horn_thread = CreateThread(NULL, 0, play_train_egg_horn, main_window, 0, NULL);
 		if (horn_thread != NULL) CloseHandle(horn_thread);
+		else PostMessageA(main_window, WM_EASTER_EGG_COMPLETE, 0, 0);
 	}
+}
+
+static void finish_train_easter_egg(HWND window)
+{
+	if (!easter_egg_active) return;
+	easter_egg_active = 0;
+	easter_logo_angle = 0.0f;
+	KillTimer(window, EASTER_EGG_TIMER);
+	restore_easter_controls();
+	SetWindowPos(window, NULL, easter_original_rect.left, easter_original_rect.top,
+		easter_original_rect.right - easter_original_rect.left,
+		easter_original_rect.bottom - easter_original_rect.top,
+		SWP_NOACTIVATE | SWP_NOZORDER);
+	InvalidateRect(window, NULL, TRUE);
 }
 
 static void show_command_message(const char* title, const char* message)
@@ -2738,6 +2989,8 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 		RECT header;
 		RECT accent;
 		HDC device_context = BeginPaint(window, &paint);
+		GpImage* displayed_logo = easter_egg_active && easter_logo_image != NULL ?
+			easter_logo_image : logo_image;
 		GetClientRect(window, &client);
 		header.left = 0;
 		header.top = 0;
@@ -2749,17 +3002,31 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 		accent.right = client.right;
 		accent.bottom = 76;
 		FillRect(device_context, &accent, accent_brush);
-		if (logo_image != NULL && gdip_create_from_hdc != NULL) {
+		if (displayed_logo != NULL && gdip_create_from_hdc != NULL) {
+			INT logo_left = easter_egg_active && easter_logo_image != NULL ? 12 : 18;
+			INT logo_top = easter_egg_active && easter_logo_image != NULL ? 10 : 8;
+			INT logo_width = easter_egg_active && easter_logo_image != NULL ? 68 : 56;
+			INT logo_height = easter_egg_active && easter_logo_image != NULL ? 51 : 56;
+			FLOAT center_x = 46.0f;
+			FLOAT center_y = easter_egg_active && easter_logo_image != NULL ? 35.5f : 36.0f;
 			GpGraphics* graphics = NULL;
 			if (gdip_create_from_hdc(device_context, &graphics) == 0) {
 				if (easter_egg_active) {
-					gdip_translate_world(graphics, -46.0f, -36.0f, 1);
+					gdip_translate_world(graphics, -center_x, -center_y, 1);
 					gdip_rotate_world(graphics, easter_logo_angle, 1);
-					gdip_translate_world(graphics, 46.0f, 36.0f, 1);
+					gdip_translate_world(graphics, center_x, center_y, 1);
 				}
-				gdip_draw_image_rect(graphics, logo_image, 18, 8, 56, 56);
+				gdip_draw_image_rect(graphics, displayed_logo, logo_left, logo_top,
+					logo_width, logo_height);
 				gdip_delete_graphics(graphics);
 			}
+		}
+		if (easter_egg_active) {
+			double progress = fmod((double)(GetTickCount64() - easter_start_tick) / 1800.0, 2.0);
+			int reverse = progress > 1.0;
+			ULONGLONG elapsed = GetTickCount64() - easter_start_tick;
+			if (reverse) progress = 2.0 - progress;
+			draw_easter_train(device_context, client.right, progress, reverse);
 		}
 		if (view_mode == VIEW_MAP) {
 			RECT map_background;
@@ -2780,6 +3047,13 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 				begin_map_data_request(window, client.right, client.bottom, 1);
 			}
 		}
+		if (easter_egg_active) {
+			ULONGLONG elapsed = GetTickCount64() - easter_start_tick;
+			ULONGLONG wall_hits = elapsed / 3000 +
+				(ULONGLONG)((double)elapsed / 2100.0 + 0.31);
+			int copy_count = wall_hits >= 31 ? 32 : (int)wall_hits + 1;
+			draw_easter_word(device_context, client.right, client.bottom, elapsed, copy_count);
+		}
 		EndPaint(window, &paint);
 		return 0;
 	}
@@ -2790,11 +3064,18 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 		}
 		return 0;
 	case MM_MCINOTIFY:
-		if (wparam == MCI_NOTIFY_SUCCESSFUL && easter_mp3_open) {
+		if ((wparam == MCI_NOTIFY_SUCCESSFUL || wparam == MCI_NOTIFY_ABORTED ||
+			wparam == MCI_NOTIFY_FAILURE) && easter_mp3_open) {
 			mciSendStringA("close mbtaEggTrack", NULL, 0, NULL);
 			easter_mp3_open = 0;
-			SetWindowTextA(status_text, "The train song clip finished.");
+			finish_train_easter_egg(window);
+			SetWindowTextA(status_text, wparam == MCI_NOTIFY_SUCCESSFUL ?
+				"The train song clip finished." : "Train song playback stopped.");
 		}
+		return 0;
+	case WM_EASTER_EGG_COMPLETE:
+		finish_train_easter_egg(window);
+		SetWindowTextA(status_text, "All aboard!");
 		return 0;
 	case WM_LBUTTONDOWN:
 		if (view_mode == VIEW_MAP) {
@@ -2998,6 +3279,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 			title_font = CreateFontA(23, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
 				DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
 				DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+			easter_font = CreateFontA(23, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+				DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+				DEFAULT_PITCH | FF_DONTCARE, "Comic Sans MS");
 			subtitle_font = CreateFontA(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
 				DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
 				DEFAULT_PITCH | FF_SWISS, "Segoe UI");
@@ -3213,25 +3497,11 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 			if (wparam == 1 && watch_enabled) begin_refresh();
 			if (wparam == EASTER_EGG_TIMER && easter_egg_active) {
 				ULONGLONG elapsed = GetTickCount64() - easter_start_tick;
-				const ULONGLONG duration = 1800;
-				if (elapsed >= duration) {
-					easter_egg_active = 0;
-					easter_logo_angle = 0.0f;
-					KillTimer(window, EASTER_EGG_TIMER);
-					SetWindowPos(window, NULL, easter_original_rect.left, easter_original_rect.top,
-						easter_original_rect.right - easter_original_rect.left,
-						easter_original_rect.bottom - easter_original_rect.top,
-						SWP_NOACTIVATE | SWP_NOZORDER);
-					InvalidateRect(window, NULL, TRUE);
-					SetWindowTextA(status_text, "All aboard!");
-					return 0;
-				}
 				{
-					double progress = (double)elapsed / duration;
-					double phase = progress * 6.283185307179586;
-					int offset_x = (int)(24.0 * sin(phase) * sin(progress * 3.141592653589793));
-					int offset_y = (int)(18.0 * cos(phase) * sin(progress * 3.141592653589793));
-					easter_logo_angle = (FLOAT)(360.0 * progress);
+					double phase = (double)elapsed / 1800.0 * 6.283185307179586;
+					int offset_x = (int)(24.0 * sin(phase));
+					int offset_y = (int)(18.0 * cos(phase));
+					easter_logo_angle = (FLOAT)fmod((double)elapsed / 5.0, 360.0);
 					SetWindowPos(window, NULL, easter_original_rect.left + offset_x,
 						easter_original_rect.top + offset_y, 0, 0,
 						SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
@@ -3417,6 +3687,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
 				easter_mp3_open = 0;
 			}
 			if (title_font != NULL) DeleteObject(title_font);
+			if (easter_font != NULL) DeleteObject(easter_font);
 			if (subtitle_font != NULL) DeleteObject(subtitle_font);
 			if (workspace_brush != NULL) DeleteObject(workspace_brush);
 			if (white_brush != NULL) DeleteObject(white_brush);
@@ -3462,6 +3733,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command_line, i
 		DispatchMessageA(&message);
 	}
 	if (logo_image != NULL && gdip_dispose_image != NULL) gdip_dispose_image(logo_image);
+	if (easter_logo_image != NULL && gdip_dispose_image != NULL) gdip_dispose_image(easter_logo_image);
 	if (gdiplus_token != 0 && gdiplus_shutdown != NULL) gdiplus_shutdown(gdiplus_token);
 	if (gdiplus_module != NULL) FreeLibrary(gdiplus_module);
 	return (int)message.wParam;
