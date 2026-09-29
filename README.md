@@ -1,392 +1,102 @@
-<img width="2198" height="1508" alt="Screenshot 2026-09-28 210107" src="https://github.com/user-attachments/assets/a454c1fe-cbec-4581-97ca-3145a684d61b" />
-# 🚆 Northeast Train Tracker
+# Northeast Train Tracker
 
-A Windows-based **live train tracking application written in C** for tracking MBTA Commuter Rail and Amtrak trains throughout New England.
+A native Windows train tracker written in C for following **MBTA Commuter Rail** and **Amtrak** trains. It brings active trains, route and stop information, service alerts, radio-frequency references, and a map into one desktop application. A command-line interface is included as well.
 
-Northeast Train Tracker combines live transit data, train locations, route information, upcoming stops, service alerts, distance calculations, and railroad radio-frequency references into one application designed for railfans and anyone interested in following trains across the Northeast.
+## Screenshots
 
----
+### Active trains
 
-## 🚉 Features
+Browse trains by source, line, destination, current stop, status, and estimated speed.
 
-### 📍 Live Train Tracking
-View currently active trains and information such as:
+![Main train list in the Windows application](screenshots/train-list.png)
 
-- Vehicle / train ID
-- Car number
-- Railroad / source
-- Route
-- Destination
-- Current status
-- Current or next stop
-- Latitude and longitude
-- Estimated speed
-- Upcoming stops
+### Map view
 
-### 🚆 MBTA + Amtrak Support
+See reported train positions and MBTA route lines; click a marker to inspect a train.
 
-The tracker currently supports:
+![Map with route lines, train markers, and a selected train](screenshots/map-view.png)
 
-- **MBTA Commuter Rail**
-- **Amtrak**
+### Train details and upcoming stops
 
-MBTA train information is retrieved using the **MBTA V3 API**, while Amtrak information is retrieved using the **Amtraker API v3**.
+Select a train to see its position, last update, upcoming stops, predictions, and available delay information.
 
-> Freight trains are currently not displayed because a suitable free live freight-location feed is not available.
+![Selected Lowell Line train with details and upcoming stops](screenshots/train-details.png)
 
----
+## Features
 
-## 🗺️ Interactive Map
+- Live MBTA Commuter Rail and Amtrak train lists, with search and filtering.
+- Map with train markers, MBTA route lines, zoom controls, and OpenStreetMap tiles.
+- Train details, upcoming stops, arrival and departure predictions where available, and MBTA route alerts.
+- Nearest-train search and train-to-location distance calculations using coordinates or recognized city/station names.
+- Estimated speeds calculated from successive reported positions. These are estimates, and may initially display as unavailable.
+- Route summaries, a railroad radio-frequency reference, favorites, saved searches, notifications, a delayed-train filter, and CSV export in the GUI.
+- Automatic refresh every 30 seconds in watch mode.
 
-The GUI includes a map view for displaying trains and railroad routes.
+The application does not provide live freight train positions.
 
-Map functionality includes:
+## Build on Windows
 
-- Live train positions
-- Route lines
-- Map tile loading and caching
-- Zoom controls
-- Map navigation
-- Selected train information
-- Route overview information
+Use the **x64 Native Tools Command Prompt for Visual Studio** (or another MSVC developer prompt). From the folder containing these source files, build either application:
 
----
+```bat
+cl /nologo /W3 /TC /Fe:TrainTrackerGUI.exe Gui.c TrainTracker.c /link /SUBSYSTEM:WINDOWS comctl32.lib user32.lib gdi32.lib shell32.lib comdlg32.lib winhttp.lib winmm.lib
+cl /nologo /W3 /TC /Fe:TrainTrackerCLI.exe Main.c TrainTracker.c /link /SUBSYSTEM:CONSOLE winhttp.lib
+```
 
-## 🔎 Train Search
+Run `TrainTrackerGUI.exe` for the desktop interface or `TrainTrackerCLI.exe` for the terminal interface. An internet connection is needed to load current train data and map tiles. The program makes HTTPS requests through Windows WinHTTP.
 
-Search active trains using keywords instead of needing to know an exact vehicle number.
+## Command-line usage
 
-Examples:
+Start `TrainTrackerCLI.exe` and enter a command at its prompt:
+
+| Command | Purpose |
+| --- | --- |
+| `<train ID>` | Show details for an active train. |
+| `list <query>`, `show <query>`, `find <query>`, `search <query>` | Filter active trains by keywords such as line, destination, source, stop, or heritage equipment. |
+| `routes` | Summarize active trains by line. |
+| `nearest <place or lat,lon>` | List up to 10 nearby active trains. |
+| `distance <train ID> <place or lat,lon>` | Estimate distance between a train and a location. |
+| `alerts <train ID or route ID>` | Show available MBTA route alerts. |
+| `freq <line or channel keywords>` | Search the built-in railroad radio-frequency reference. |
+| `watch` | Refresh the active train list every 30 seconds until a key is pressed. |
+| `help` or `?` | Show command help. |
+| `Q` | Quit. |
+
+For example:
 
 ```text
-list heritage trains
 find Providence
-search Amtrak
-show Fitchburg
-```
-
-The search system can match information including:
-
-- Railroad
-- Route
-- Destination
-- Stop
-- Vehicle ID
-- Heritage equipment
-
-Common filler words such as `all`, `active`, `train`, `show`, and `currently` are automatically ignored.
-
----
-
-## 📏 Nearest Train & Distance Tools
-
-Find trains near a particular station, city, or set of coordinates.
-
-Example:
-
-```text
-nearest Worcester
-```
-
-or:
-
-```text
+nearest Lowell
 nearest 42.35,-71.06
-```
-
-The tracker can return the **10 nearest active trains**.
-
-You can also calculate the approximate distance between a specific train and a location:
-
-```text
-distance 1234 Providence
-```
-
-Distance calculations use geographic coordinates and the Haversine formula.
-
----
-
-## 🚨 MBTA Service Alerts
-
-Retrieve active service alerts for MBTA Commuter Rail routes.
-
-```text
-alerts 1234
-```
-
-or search directly by route ID.
-
-Service alerts are currently available for **MBTA trains only**.
-
----
-
-## 📻 Railroad Radio Frequencies
-
-Northeast Train Tracker also includes a railroad radio-frequency reference system.
-
-Search by railroad line or channel type:
-
-```text
+distance 1234 Worcester
 freq road Fitchburg
 ```
 
-```text
-freq dispatch Old Colony
-```
+Train IDs in examples are illustrative; use an ID currently shown by the application.
 
-Radio information can include:
-
-- Railroad / line
-- Channel type
-- AAR channel
-- Frequency
-- Notes
-
----
-
-## ⏱️ Watch Mode
-
-The command-line version includes an automatic monitoring mode:
+## Project files
 
 ```text
-watch
+Northeast-Train-Tracker/
+├── Gui.c              # Win32 desktop application
+├── Main.c             # Command-line application
+├── TrainTracker.c     # Data retrieval and shared train logic
+├── TrainTracker.h     # Shared types and declarations
+├── README.md
+└── screenshots/
+    ├── train-list.png
+    ├── map-view.png
+    └── train-details.png
 ```
 
-Watch mode refreshes the active train list every **30 seconds** until a key is pressed.
+## Data and attribution
 
-This makes it useful for continuously monitoring active equipment without manually refreshing the program.
+- MBTA Commuter Rail data: [MBTA V3 API](https://www.mbta.com/developers/v3-api).
+- Amtrak data: [Amtraker API v3](https://amtraker.com/) (identified in the application as ODC-By 1.0).
+- Map tiles: [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 
----
+Positions, predictions, alerts, and availability depend on the upstream feeds. This is an independent project and is not affiliated with the MBTA, Amtrak, or their operators. Do not rely on it for railroad operations or safety decisions.
 
-## 🛤️ Route Summaries
+## Contributing
 
-Use:
-
-```text
-routes
-```
-
-to display active trains grouped by route.
-
-The route summary can also track the number of recognized **heritage trains** operating on each route.
-
----
-
-## ⭐ GUI Features
-
-In addition to the command-line interface, the project contains a native Windows GUI.
-
-The GUI includes functionality for:
-
-- Train list
-- Train details
-- Upcoming stops
-- Search and filtering
-- Refreshing live data
-- Route information
-- MBTA alerts
-- Favorites
-- Saved searches
-- Nearest-train searches
-- Distance calculations
-- Map view
-- Delayed-train filtering
-- Data export
-- Notifications
-- System tray support
-
----
-
-## 🧠 Estimated Train Speed
-
-When multiple location samples are available, Northeast Train Tracker can estimate train speed based on the distance traveled between reported positions.
-
-Because this is calculated from successive API location updates, the displayed speed should be considered an **estimate**, not an official locomotive speed measurement.
-
----
-
-## 🏙️ Location Search
-
-The application contains a built-in list of cities and stations throughout the Northeast, allowing commands such as:
-
-```text
-nearest Boston
-nearest Worcester
-nearest Providence
-nearest Lowell
-nearest New Haven
-nearest Portland
-```
-
-Coordinates can also be entered directly.
-
----
-
-## 💻 Technology
-
-The project is primarily written in **C** and uses native Windows APIs.
-
-### Core Technologies
-
-- C
-- Win32 API
-- Windows HTTP Services (`WinHTTP`)
-- Windows Common Controls
-- GDI / GDI+
-- JSON parsing
-- REST APIs
-- Geographic coordinate calculations
-
-The application communicates directly with web APIs rather than requiring a large external framework.
-
----
-
-## 📂 Project Structure
-
-```text
-TrainTracker/
-│
-├── Main.c
-│   └── Command-line interface and command handling
-│
-├── Gui.c
-│   └── Native Windows graphical interface
-│
-├── TrainTracker.c
-│   └── Core train tracking, API, parsing, location,
-│       distance, alert, map, and radio functionality
-│
-├── TrainTracker.h
-│   └── Shared structures, constants, and function declarations
-│
-└── README.md
-```
-
----
-
-## 🔧 Building
-
-The project is designed for **Windows** and relies on Windows-specific libraries.
-
-Required Windows libraries include:
-
-```text
-user32.lib
-gdi32.lib
-comctl32.lib
-shell32.lib
-comdlg32.lib
-winhttp.lib
-winmm.lib
-```
-
-Because the program uses Windows APIs such as WinHTTP and the Win32 GUI system, it should be compiled using a compatible Windows C compiler such as **Microsoft Visual C/C++ (MSVC)**.
-
----
-
-## 🎮 Command-Line Commands
-
-| Command | Description |
-|---|---|
-| `<train ID>` | Display information about a specific train |
-| `list <query>` | Search active trains |
-| `find <query>` | Search active trains |
-| `search <query>` | Search active trains |
-| `routes` | Show active trains grouped by route |
-| `nearest <location>` | Find the nearest active trains |
-| `distance <train> <location>` | Calculate distance from a train |
-| `alerts <train/route>` | Display MBTA service alerts |
-| `freq <query>` | Search railroad radio frequencies |
-| `watch` | Automatically refresh train data |
-| `help` | Display available commands |
-| `Q` | Quit |
-
----
-
-## 📡 Data Sources
-
-Train information is retrieved from external transit data sources.
-
-### MBTA
-
-MBTA Commuter Rail information is retrieved through the **MBTA V3 API**.
-
-### Amtrak
-
-Amtrak information is retrieved through the **Amtraker API v3**.
-
-Amtraker data is identified by the application as being provided under **ODC-By 1.0**.
-
-Availability and accuracy of train information depend on the upstream services and the data being reported by each railroad.
-
----
-
-## ⚠️ Disclaimer
-
-Northeast Train Tracker is an independent project and is **not affiliated with, endorsed by, or operated by the MBTA, Amtrak, Keolis, or any other railroad or transit agency**.
-
-Train positions, arrival predictions, speeds, delays, and other information may be delayed, estimated, incomplete, or unavailable.
-
-**Do not use this application for safety-critical decisions or railroad operations.**
-
----
-
-## 🚧 Future Development
-
-Possible future improvements include:
-
-- Additional Northeast railroads
-- Improved train history
-- More detailed delay statistics
-- Better map visualization
-- Additional notification options
-- Expanded heritage equipment database
-- Improved station searching
-- Train movement history
-- Additional railfan-focused tools
-- Additional data sources when publicly available
-
----
-
-## 📸 Screenshots
-
-Screenshots of the application can be added here.
-
-```text
-<img width="2198" height="1508" alt="Screenshot 2026-09-28 210107" src="https://github.com/user-attachments/assets/5609f197-899c-4982-b967-47c200124325" />
-
-
-<img width="2192" height="1498" alt="Screenshot 2026-09-28 210142" src="https://github.com/user-attachments/assets/e1163243-d345-4793-ab14-fb81b508960e" />
-
-
-<img width="2200" height="1498" alt="Screenshot 2026-09-28 210225" src="https://github.com/user-attachments/assets/25cd1a6e-b607-406c-ba7a-c5e4d7c878e4" />
-
-```
-
----
-
-## 🤝 Contributions
-
-Contributions, bug reports, and feature suggestions are welcome.
-
-If you find an issue, feel free to open a GitHub Issue describing:
-
-- What happened
-- What you expected to happen
-- Steps to reproduce the problem
-- Your Windows version
-- Any relevant error messages
-
----
-
-## 🚆 About the Project
-
-Northeast Train Tracker was created as a C programming project combining an interest in **software development, trains, transit data, and railfanning**.
-
-The goal is to create a practical desktop tool that makes publicly available train information easier and more enjoyable to explore.
-
----
-
-### 🚉 Happy Railfanning!
-
-*Track the train. Find the route. Catch the shot.*
+Issues and suggestions are welcome. Include the Windows version, steps to reproduce, the expected result, and any error message when reporting a bug.
